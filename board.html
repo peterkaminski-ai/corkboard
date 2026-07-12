@@ -1132,7 +1132,7 @@ Feedback notes queue in <code>inbox.jsonl</code>; the desk agent drains them. Se
 <script>
 const STATUS_ORDER = ["active","waiting","steady","paused-hold","done","archived"];
 const KIND_GLYPH = { project:"📁", bg:"🌀", thread:"🧵" };
-const API = location.protocol === "file:" ? "http://localhost:2675" : "";
+const API = "";  // live mode only when served same-origin by corkboard-serve
 
 let board = JSON.parse(document.getElementById("board-data").textContent || "{}");
 let live = false;
@@ -1157,7 +1157,7 @@ async function init() {
       await refreshQueued();
     }
   } catch (e) { /* no server — read-only */ }
-  $("mode").textContent = live ? "live" : "read-only — start ./corkboard-serve to interact";
+  $("mode").textContent = live ? "live" : "read-only — run ./corkboard-serve and open http://localhost:2675 to interact";
   $("mode").className = "badge " + (live ? "b-live" : "b-ro");
   $("action").disabled = !live;
   $("process").disabled = !live;

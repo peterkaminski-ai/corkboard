@@ -29,6 +29,7 @@ Requires Python 3. No dependencies, no build step, no accounts.
 | File | What it is |
 |---|---|
 | `PATTERN.md` | The pattern, documented: tracking IDs, the view-not-truth principle, the feedback lifecycle, why a human-legible agent stays in the loop |
+| `WISHLIST.md` | Ideas we like but haven't built (first up: serverless mode via the File System Access API) |
 | `PROCEDURES.md` | The two operating procedures for the desk agent: **drain** (consume the principal's notes) and **sweep** (refresh the board from ground truth) |
 | `corkboard-serve` | Single-file Python 3 stdlib server; also `./corkboard-serve render` to re-embed the registry into the static page |
 | `board.html` | The board UI — one self-contained page; live with the server, read-only without it |

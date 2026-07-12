@@ -6,7 +6,7 @@ Corkboard is a pattern first and software second. The pattern: a human principal
 
 The board is a **view and a routing surface, not a source of truth**. Canonical state stays in your own files — status docs, handoff notes, task lists. The desk agent is the transmission: it *sweeps* ground truth onto the board, and *drains* your queued notes back out into real work, archiving every consumed note with a one-line disposition saying what was done. Nothing is silently dropped; nothing updates itself without a narrator.
 
-<!-- screenshot: board.html with the attention queue on top, pins strip, and a queued note visible -->
+![The sample board: sticky topbar with pinned items, and the attention queue on top](docs/screenshot.png)
 
 ## Quickstart
 

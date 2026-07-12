@@ -1,0 +1,1445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corkboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📌</text></svg>">
+<style>
+  :root {
+    --ink:#26221c; --paper:#faf7f2; --card:#fffdf9; --line:#e5ddd0; --dim:#7a7264;
+    --green:#2e7d46; --greenbg:#e3f2e7;
+    --blue:#2a5d8f; --bluebg:#e4eef7;
+    --amber:#9a6b0a; --amberbg:#faf0d8;
+    --red:#a03a2e; --redbg:#f9e5e1;
+    --gray:#6b6558; --graybg:#eeeae2;
+    --purple:#5e4a8f; --purplebg:#ece7f7;
+    --teal:#1d6b63; --tealbg:#e0f0ee;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:0 2rem 4rem; background:var(--paper); color:var(--ink);
+         font:15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  #topbar { position:sticky; top:0; z-index:20; background:var(--paper); margin:0 -2rem 1rem;
+            padding:1rem 2rem .7rem; border-bottom:1px solid var(--line);
+            box-shadow:0 2px 6px rgba(0,0,0,.05); }
+  #process { position:absolute; top:1rem; right:2rem; font:inherit; font-size:.85rem;
+             padding:.3rem .9rem; border:1px solid var(--amber); border-radius:8px;
+             background:var(--amberbg); color:var(--amber); font-weight:600; cursor:pointer; }
+  #process:hover { filter:brightness(.97); }
+  #process:disabled { opacity:.4; cursor:default; }
+  #pins { display:flex; flex-wrap:wrap; gap:.4rem; margin:.6rem 0 0; }
+  .pinchip { display:inline-flex; align-items:center; gap:.4rem; max-width:100%;
+             background:var(--card); border:1px solid var(--amber); border-radius:999px;
+             padding:.15rem .7rem; font-size:.8rem; cursor:pointer; white-space:nowrap;
+             overflow:hidden; text-overflow:ellipsis; }
+  .pinchip .pid { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; color:var(--dim); font-size:.72rem; }
+  .pinchip b { font-weight:600; }
+  .pinchip .pnext { color:var(--dim); overflow:hidden; text-overflow:ellipsis; }
+  .pin-btn { cursor:pointer; border:none; background:none; font-size:.9rem; opacity:.35; padding:0 .15rem; }
+  .pin-btn:hover { opacity:1; }
+  .pin-btn.pinned { opacity:1; }
+  .pin-btn:disabled { opacity:.15; cursor:default; }
+  h1 { font-size:1.5rem; margin:0; }
+  h2 { font-size:1.1rem; margin:2rem 0 .5rem; border-bottom:2px solid var(--line); padding-bottom:.3rem; }
+  .sub { color:var(--dim); margin:.2rem 0 0; font-size:.85rem; }
+  .badge { display:inline-block; padding:.1rem .6rem; border-radius:999px; font-size:.72rem; font-weight:600; vertical-align:middle; }
+  .b-live { background:var(--greenbg); color:var(--green); }
+  .b-ro   { background:var(--graybg);  color:var(--gray); }
+  #controls { display:flex; flex-wrap:wrap; gap:.9rem; align-items:center; margin:.8rem 0 0;
+              padding:.6rem .8rem; background:var(--card); border:1px solid var(--line); border-radius:8px; font-size:.85rem; }
+  #controls label { color:var(--dim); }
+  #controls button { font:inherit; font-size:.85rem; padding:.15rem .7rem; border:1px solid var(--line);
+                     border-radius:5px; background:#fff; color:var(--ink); cursor:pointer; }
+  #controls button:disabled { opacity:.4; cursor:default; }
+  #selcount { color:var(--purple); font-weight:600; font-size:.8rem; }
+  td.sel, th.sel { width:1.4rem; text-align:center; padding-left:.5rem; padding-right:0; }
+  select, input[type=text] { font:inherit; font-size:.85rem; padding:.15rem .3rem;
+    border:1px solid var(--line); border-radius:5px; background:#fff; color:var(--ink); }
+  #filter { width:14rem; }
+  table { border-collapse:collapse; width:100%; background:var(--card); box-shadow:0 1px 2px rgba(0,0,0,.05); margin-bottom:1rem; }
+  th { text-align:left; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--dim);
+       padding:.45rem .6rem; border-bottom:2px solid var(--line); }
+  td { padding:.45rem .6rem; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr.item:last-child td { border-bottom:none; }
+  td.id { font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color:var(--dim);
+          white-space:nowrap; cursor:pointer; }
+  td.id:hover { color:var(--blue); }
+  td.name { font-weight:600; }
+  td.name .kind { font-weight:400; margin-right:.25rem; }
+  td.name .path { display:block; font-size:.72rem; font-weight:400; color:var(--dim);
+                  font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+  td.next { color:#3d3830; }
+  td.next .one { color:var(--dim); display:block; font-size:.85rem; }
+  .pill { display:inline-block; padding:.08rem .55rem; border-radius:999px; font-size:.7rem; font-weight:600;
+          letter-spacing:.02em; white-space:nowrap; }
+  .s-active         { background:var(--bluebg);   color:var(--blue); }
+  .s-waiting        { background:var(--purplebg); color:var(--purple); }
+  .s-steady         { background:var(--tealbg);   color:var(--teal); }
+  .s-paused-hold    { background:var(--amberbg);  color:var(--amber); }
+  .s-done           { background:var(--greenbg);  color:var(--green); }
+  .s-archived       { background:var(--graybg);   color:var(--gray); }
+  .who { font-size:.75rem; color:var(--dim); white-space:nowrap; }
+  .flag { display:block; margin-top:.2rem; font-size:.78rem; color:var(--amber); }
+  .fb-btn { cursor:pointer; border:none; background:none; font-size:.95rem; opacity:.45; padding:0 .2rem; }
+  .fb-btn:hover { opacity:1; }
+  .fb-btn:disabled { opacity:.15; cursor:default; }
+  tr.fbrow td { background:var(--amberbg); border-bottom:1px solid var(--line); }
+  tr.fbrow input { width:100%; }
+  .queued { display:block; margin-top:.25rem; font-size:.78rem; color:var(--amber); }
+  .queued b { font-weight:600; }
+  .toast { position:fixed; bottom:1.2rem; right:1.4rem; background:var(--ink); color:var(--paper);
+           padding:.5rem .9rem; border-radius:8px; font-size:.85rem; opacity:0; transition:opacity .25s; pointer-events:none; }
+  .toast.show { opacity:.92; }
+  .count { color:var(--dim); font-weight:400; font-size:.8rem; }
+  #attn h2 { border-color:var(--purple); }
+  .foot { margin-top:2.5rem; color:var(--dim); font-size:.78rem; border-top:1px solid var(--line); padding-top:.8rem; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+<button id="process" disabled title="flag the queued notes for your desk agent to drain">🔔 Process notes</button>
+<h1>📌 Corkboard <span id="mode" class="badge b-ro">…</span></h1>
+<p class="sub" id="swept"></p>
+<div id="pins"></div>
+
+<div id="controls">
+  <label>Group by
+    <select id="groupby">
+      <option value="theme">theme</option>
+      <option value="status">status</option>
+      <option value="owner">owner</option>
+      <option value="id-asc">id ↑ (oldest first)</option>
+      <option value="id-desc">id ↓ (newest first)</option>
+    </select>
+  </label>
+  <label><input type="checkbox" id="showdone"> show done</label>
+  <label><input type="checkbox" id="showarch"> show archived</label>
+  <label>Filter <input type="text" id="filter" placeholder="title, next, id…"></label>
+  <label>Action
+    <select id="action">
+      <option value="">— pick —</option>
+      <option>make current</option>
+      <option>mark done</option>
+      <option>archive</option>
+      <option>integrate</option>
+      <option>don't worry about this any more</option>
+      <option>background this</option>
+      <option>brief me on this</option>
+    </select>
+  </label>
+  <button id="apply" disabled>Apply</button>
+  <span id="selcount"></span>
+</div>
+</div>
+
+<div id="attn"></div>
+<div id="groups"></div>
+
+<p class="foot">Corkboard is a view and a routing surface, not a source of truth — status files and bg handoffs stay canonical.
+Feedback notes queue in <code>inbox.jsonl</code>; the desk agent drains them. See <code>PATTERN.md</code>.</p>
+
+<div class="toast" id="toast"></div>
+
+<script id="board-data" type="application/json">{
+ "themes": [
+  "Field Guide",
+  "Birding",
+  "Print Shop",
+  "Canoe",
+  "Open Source",
+  "Family",
+  "House",
+  "Finance",
+  "Desk Ops",
+  "Community"
+ ],
+ "swept": "2026-07-10",
+ "items": {
+  "260415-km": {
+   "title": "field-guide",
+   "kind": "project",
+   "path": "projects/field-guide/",
+   "owner": "alice",
+   "theme": "Field Guide",
+   "status": "active",
+   "oneliner": "Field guide to urban birds; 14 of 40 species accounts drafted",
+   "next": "Corvid section this week; swift account blocked on the roost photos",
+   "founded": "2026-04-15",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260502-rt": {
+   "title": "field-guide-plates",
+   "kind": "project",
+   "path": "projects/field-guide-plates/",
+   "owner": "",
+   "theme": "Field Guide",
+   "status": "active",
+   "oneliner": "12 illustration plates commissioned from Bob; 5 delivered",
+   "next": "Chase plates 6–8; house-sparrow plate needs the beak fixed before approval",
+   "founded": "2026-05-02",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260518-vg": {
+   "title": "publisher-pitch",
+   "kind": "project",
+   "path": "projects/publisher-pitch/",
+   "owner": "alice",
+   "theme": "Field Guide",
+   "status": "waiting",
+   "oneliner": "Query letters out to three regional presses; one nibble",
+   "next": "Alice: answer the Cedarline editor (see pinned thread) before chasing the other two",
+   "founded": "2026-05-18",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260421-ne": {
+   "title": "species-account-template",
+   "kind": "project",
+   "path": "projects/field-guide/template/",
+   "owner": "",
+   "theme": "Field Guide",
+   "status": "done",
+   "oneliner": "Standard account shape settled after the warbler rewrite; all 14 drafts conform",
+   "next": "",
+   "founded": "2026-04-21",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260429-wf": {
+   "title": "roost-survey-2026",
+   "kind": "project",
+   "path": "projects/roost-survey-2026/",
+   "owner": "alice",
+   "theme": "Birding",
+   "status": "steady",
+   "oneliner": "Chimney-swift roost counts, weekly through September; 9 counts logged",
+   "next": "Next count Thursday dusk; bring the spare clicker (main one sticks)",
+   "founded": "2026-04-29",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260607-pl": {
+   "title": "bird-audio-kit",
+   "kind": "project",
+   "path": "projects/bird-audio-kit/",
+   "owner": "",
+   "theme": "Field Guide",
+   "status": "paused-hold",
+   "oneliner": "Recording rig for song spectrograms in the guide; parabolic vs. shotgun undecided",
+   "next": "Revisit after the corvid section ships",
+   "founded": "2026-06-07",
+   "first_swept": "2026-06-09",
+   "last_swept": "2026-07-10"
+  },
+  "260412-oc": {
+   "title": "big-year-2026",
+   "kind": "project",
+   "path": "projects/big-year-2026/",
+   "owner": "alice",
+   "theme": "Birding",
+   "status": "steady",
+   "oneliner": "County big year: 187 species as of 7/08",
+   "next": "Shorebird push at the treatment ponds before fall passage thins out",
+   "founded": "2026-04-12",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260419-hs": {
+   "title": "banding-station",
+   "kind": "project",
+   "path": "projects/banding-station/",
+   "owner": "alice",
+   "theme": "Birding",
+   "status": "steady",
+   "oneliner": "Second-Saturday volunteering at the ridge banding station",
+   "next": "Next session 7/11; bring the spare net poles she promised",
+   "founded": "2026-04-19",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260504-mz": {
+   "title": "christmas-count-sector",
+   "kind": "project",
+   "path": "projects/christmas-count-sector/",
+   "owner": "",
+   "theme": "Birding",
+   "status": "paused-hold",
+   "oneliner": "Sector 4 lead for the December count; route map filed",
+   "next": "Nothing until November; recruit a second counter then",
+   "founded": "2026-05-04",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260503-tb": {
+   "title": "shop-site-refresh",
+   "kind": "project",
+   "path": "projects/shop-site-refresh/",
+   "owner": "",
+   "theme": "Print Shop",
+   "status": "active",
+   "oneliner": "New shop site on quoin; catalog page half-built (34 products in)",
+   "next": "Product photos Tuesday; then swap the checkout link",
+   "founded": "2026-05-03",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10",
+   "flags": [
+    "status file says 'checkout live' but the checkout link still points at the closed storefront"
+   ]
+  },
+  "260618-qa": {
+   "title": "wedding-suite-hendricks",
+   "kind": "project",
+   "path": "projects/wedding-suite-hendricks/",
+   "owner": "alice",
+   "theme": "Print Shop",
+   "status": "active",
+   "oneliner": "Custom invitation suite, 120 count; client approved the proof 7/07",
+   "next": "Print run Friday; calligraphy addressing next week",
+   "founded": "2026-06-18",
+   "first_swept": "2026-06-21",
+   "last_swept": "2026-07-10"
+  },
+  "260610-cf": {
+   "title": "mug-run-stoneware",
+   "kind": "project",
+   "path": "projects/mug-run-stoneware/",
+   "owner": "alice",
+   "theme": "Print Shop",
+   "status": "active",
+   "oneliner": "40 stoneware mugs with the shop lettering for the fall market",
+   "next": "Kiln firing booked 7/18; glaze tests first",
+   "founded": "2026-06-10",
+   "first_swept": "2026-06-15",
+   "last_swept": "2026-07-10",
+   "pinned": true
+  },
+  "260416-jd": {
+   "title": "platen-press-restoration",
+   "kind": "project",
+   "path": "projects/platen-press-restoration/",
+   "owner": "",
+   "theme": "Print Shop",
+   "status": "steady",
+   "oneliner": "1923 platen press: rollers recast, ink disk trued",
+   "next": "Source a throw-off lever spring; treadle rebuild after",
+   "founded": "2026-04-16",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260625-xe": {
+   "title": "paper-supplier-switch",
+   "kind": "project",
+   "path": "projects/paper-supplier-switch/",
+   "owner": "alice",
+   "theme": "Print Shop",
+   "status": "waiting",
+   "oneliner": "Cotton stock supplier raised prices 22%; two sample books on the bench",
+   "next": "Alice: pick between the two sample books; reorder point hits ~8/01",
+   "founded": "2026-06-25",
+   "first_swept": "2026-06-28",
+   "last_swept": "2026-07-10"
+  },
+  "260601-bn": {
+   "title": "fall-market-booth",
+   "kind": "project",
+   "path": "projects/fall-market-booth/",
+   "owner": "",
+   "theme": "Print Shop",
+   "status": "active",
+   "oneliner": "Booth accepted for the October makers market; deposit paid",
+   "next": "Banner design; inventory targets by 8/15",
+   "founded": "2026-06-01",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260522-gy": {
+   "title": "library-quote-wall",
+   "kind": "project",
+   "path": "projects/library-quote-wall/",
+   "owner": "",
+   "theme": "Print Shop",
+   "status": "done",
+   "oneliner": "Lettered quote wall for the branch library children's room; installed 6/24",
+   "next": "",
+   "founded": "2026-05-22",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260701-rk": {
+   "title": "shop-books-q2",
+   "kind": "project",
+   "path": "projects/shop-books-q2/",
+   "owner": "",
+   "theme": "Finance",
+   "status": "done",
+   "oneliner": "Q2 books reconciled via bg-whimbrel; sales tax filed 7/06",
+   "next": "",
+   "founded": "2026-07-01",
+   "first_swept": "2026-07-03",
+   "last_swept": "2026-07-10"
+  },
+  "260614-us": {
+   "title": "gift-certificates",
+   "kind": "project",
+   "path": "projects/gift-certificates/",
+   "owner": "",
+   "theme": "Print Shop",
+   "status": "paused-hold",
+   "oneliner": "Paper gift certificates vs. simple codes; sketches saved",
+   "next": "Parked until after the fall market",
+   "founded": "2026-06-14",
+   "first_swept": "2026-06-15",
+   "last_swept": "2026-07-10"
+  },
+  "260619-lp": {
+   "title": "apprentice-search",
+   "kind": "project",
+   "path": "projects/apprentice-search/",
+   "owner": "alice",
+   "theme": "Print Shop",
+   "status": "waiting",
+   "oneliner": "Two candidates interviewed for the fall apprenticeship; both plausible",
+   "next": "Alice: call references, decide by 7/20 (both are interviewing elsewhere)",
+   "founded": "2026-06-19",
+   "first_swept": "2026-06-21",
+   "last_swept": "2026-07-10"
+  },
+  "260425-zv": {
+   "title": "storefront-closeout",
+   "kind": "project",
+   "path": "projects/storefront-closeout/",
+   "owner": "",
+   "theme": "Print Shop",
+   "status": "archived",
+   "oneliner": "Closed the hosted storefront; direct site only from June on; final payout landed",
+   "next": "",
+   "founded": "2026-04-25",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260418-fq": {
+   "title": "canoe-restoration",
+   "kind": "project",
+   "path": "projects/canoe-restoration/",
+   "owner": "alice",
+   "theme": "Canoe",
+   "status": "active",
+   "oneliner": "Cedar-strip canoe: hull stripped, three ribs replaced, two to go",
+   "next": "Steam-bend the last two ribs this weekend; canvas goes on after",
+   "founded": "2026-04-18",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260702-dh": {
+   "title": "canvas-and-filler-order",
+   "kind": "project",
+   "path": "projects/canoe-restoration/canvas-order/",
+   "owner": "alice",
+   "theme": "Canoe",
+   "status": "waiting",
+   "oneliner": "#10 canvas + filler quoted from two suppliers; cheaper one holds price through 7/22",
+   "next": "Alice: approve a quote before the price hold lapses",
+   "founded": "2026-07-02",
+   "first_swept": "2026-07-03",
+   "last_swept": "2026-07-10"
+  },
+  "260509-yb": {
+   "title": "paddle-carving",
+   "kind": "project",
+   "path": "projects/paddle-carving/",
+   "owner": "",
+   "theme": "Canoe",
+   "status": "paused-hold",
+   "oneliner": "Ottertail blank roughed out; spokeshave work remains",
+   "next": "Resume after the hull is canvased",
+   "founded": "2026-05-09",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10",
+   "flags": [
+    "projects/paddle-carving/ not found at last sweep — moved to the workshop notebook? confirm before archiving"
+   ]
+  },
+  "260530-sw": {
+   "title": "launch-day",
+   "kind": "project",
+   "path": "projects/canoe-restoration/launch-day.md",
+   "owner": "",
+   "theme": "Canoe",
+   "status": "steady",
+   "oneliner": "Maiden voyage on the lake, target late August; guest list started",
+   "next": "Watch the hull schedule; invite Carol once a date firms up",
+   "founded": "2026-05-30",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260413-eh": {
+   "title": "perch",
+   "kind": "project",
+   "path": "projects/perch/",
+   "owner": "alice",
+   "theme": "Open Source",
+   "status": "active",
+   "oneliner": "Bird-sighting logger CLI; v0.9 out, 61 stars, issues arriving weekly",
+   "next": "v1.0: ship the #83 timezone fix, then the export command",
+   "founded": "2026-04-13",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260427-il": {
+   "title": "inklet",
+   "kind": "project",
+   "path": "projects/inklet/",
+   "owner": "",
+   "theme": "Open Source",
+   "status": "steady",
+   "oneliner": "SVG lettering/ornament tool; two community PRs waiting review",
+   "next": "Review the kerning PR first; cut a patch release after both land",
+   "founded": "2026-04-27",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260420-ta": {
+   "title": "quoin",
+   "kind": "project",
+   "path": "projects/quoin/",
+   "owner": "",
+   "theme": "Open Source",
+   "status": "steady",
+   "oneliner": "Static-site generator the shop site runs on; quiet and healthy",
+   "next": "Docs pass owed; issue #12 (nav ordering) is low heat",
+   "founded": "2026-04-20",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260628-om": {
+   "title": "perch-issue-83",
+   "kind": "project",
+   "path": "projects/perch/issues/83/",
+   "owner": "",
+   "theme": "Open Source",
+   "status": "done",
+   "oneliner": "Sightings logged near midnight UTC landed on the wrong day; fixed with regression test via bg-phalarope",
+   "next": "",
+   "founded": "2026-06-28",
+   "first_swept": "2026-06-28",
+   "last_swept": "2026-07-10"
+  },
+  "260516-ay": {
+   "title": "oss-triage-rotation",
+   "kind": "project",
+   "path": "projects/oss-triage-rotation/",
+   "owner": "iris",
+   "theme": "Open Source",
+   "status": "steady",
+   "oneliner": "Iris triages new issues across all three repos every Monday",
+   "next": "Escalate anything security-shaped same-day; otherwise weekly digest",
+   "founded": "2026-05-16",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260623-fu": {
+   "title": "tiny-tools-talk",
+   "kind": "project",
+   "path": "projects/tiny-tools-talk/",
+   "owner": "alice",
+   "theme": "Open Source",
+   "status": "waiting",
+   "oneliner": "CFP for the regional open-source conference closes 7/25; abstract drafted",
+   "next": "Alice: yes/no on submitting the 'tiny tools, long lives' talk",
+   "founded": "2026-06-23",
+   "first_swept": "2026-06-28",
+   "last_swept": "2026-07-10"
+  },
+  "260430-pd": {
+   "title": "old-blog-migration",
+   "kind": "project",
+   "path": "projects/old-blog-migration/",
+   "owner": "",
+   "theme": "Open Source",
+   "status": "archived",
+   "oneliner": "Old blog folded into the quoin site; redirects verified; repo archived 5/30",
+   "next": "",
+   "founded": "2026-04-30",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260511-kw": {
+   "title": "mom-slide-digitization",
+   "kind": "project",
+   "path": "projects/mom-slide-digitization/",
+   "owner": "",
+   "theme": "Family",
+   "status": "active",
+   "oneliner": "Scanning mom's slide carousels; 4 of 11 done, best 40 shared so far",
+   "next": "Carousel 5 queued on bg-nightjar; color-cast fix needed on the 1970s batch",
+   "founded": "2026-05-11",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260524-bx": {
+   "title": "reunion-2026",
+   "kind": "project",
+   "path": "projects/reunion-2026/",
+   "owner": "alice",
+   "theme": "Family",
+   "status": "active",
+   "oneliner": "August family reunion at the lake house; 23 confirmed so far",
+   "next": "Book the pavilion; dietary list to Carol by 7/15",
+   "founded": "2026-05-24",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260615-vn": {
+   "title": "nephew-summer-visit",
+   "kind": "project",
+   "path": "projects/nephew-summer-visit/",
+   "owner": "",
+   "theme": "Family",
+   "status": "done",
+   "oneliner": "Theo's week: banding station, a print-shop day, tide pools; went great",
+   "next": "",
+   "founded": "2026-06-15",
+   "first_swept": "2026-06-15",
+   "last_swept": "2026-07-10"
+  },
+  "260414-gj": {
+   "title": "estate-paperwork",
+   "kind": "project",
+   "path": "projects/estate-paperwork/",
+   "owner": "alice",
+   "theme": "Family",
+   "status": "waiting",
+   "oneliner": "Dad's final account transfer needs a medallion signature guarantee",
+   "next": "Alice: bank appointment — bring the letters testamentary and both IDs",
+   "founded": "2026-04-14",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260605-hr": {
+   "title": "sister-birthday-broadside",
+   "kind": "project",
+   "path": "projects/sister-birthday-broadside/",
+   "owner": "",
+   "theme": "Family",
+   "status": "done",
+   "oneliner": "Letterpress broadside of her favorite poem; delivered 6/29, she cried",
+   "next": "",
+   "founded": "2026-06-05",
+   "first_swept": "2026-06-09",
+   "last_swept": "2026-07-10"
+  },
+  "260428-so": {
+   "title": "cousin-address-book",
+   "kind": "project",
+   "path": "projects/reunion-2026/address-book/",
+   "owner": "dana",
+   "theme": "Family",
+   "status": "steady",
+   "oneliner": "Shared address list for the reunion mailing; 61 entries, 54 verified",
+   "next": "Dana chases the last 7 via the cousins' thread; then print labels",
+   "founded": "2026-04-28",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260519-mm": {
+   "title": "heat-pump-replacement",
+   "kind": "project",
+   "path": "projects/heat-pump-replacement/",
+   "owner": "alice",
+   "theme": "House",
+   "status": "waiting",
+   "oneliner": "Three quotes in; rebate paperwork drafted; comparison sheet ready",
+   "next": "Alice: pick an installer — rebate window closes 8/31",
+   "founded": "2026-05-19",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260526-du": {
+   "title": "gutter-rehang",
+   "kind": "project",
+   "path": "projects/gutter-rehang/",
+   "owner": "",
+   "theme": "House",
+   "status": "done",
+   "oneliner": "North-side gutters rehung 6/17; passed the first real storm 7/02",
+   "next": "",
+   "founded": "2026-05-26",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260417-mv": {
+   "title": "garden-beds",
+   "kind": "project",
+   "path": "projects/garden-beds/",
+   "owner": "",
+   "theme": "House",
+   "status": "steady",
+   "oneliner": "Four raised beds; tomatoes staked, beans climbing",
+   "next": "Succession-sow lettuce; replace the drip-timer battery",
+   "founded": "2026-04-17",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260629-mx": {
+   "title": "basement-damp",
+   "kind": "project",
+   "path": "projects/basement-damp/",
+   "owner": "",
+   "theme": "House",
+   "status": "active",
+   "oneliner": "Hygrometer logging for two weeks; readings spike ~36h after rain",
+   "next": "Regrade vs. dehumidifier call once the log fills (7/13)",
+   "founded": "2026-06-29",
+   "first_swept": "2026-07-03",
+   "last_swept": "2026-07-10"
+  },
+  "260531-cj": {
+   "title": "driveway-sealing",
+   "kind": "project",
+   "path": "projects/driveway-sealing/",
+   "owner": "",
+   "theme": "House",
+   "status": "paused-hold",
+   "oneliner": "Both quotes came in high; contractors busy season",
+   "next": "Re-ask in September when the season slows",
+   "founded": "2026-05-31",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260609-mf": {
+   "title": "attic-insulation",
+   "kind": "project",
+   "path": "projects/attic-insulation/",
+   "owner": "",
+   "theme": "House",
+   "status": "paused-hold",
+   "oneliner": "Batts vs. blown-in comparison saved; likely stacks with the heat-pump rebate",
+   "next": "Decide alongside the heat-pump pick",
+   "founded": "2026-06-09",
+   "first_swept": "2026-06-09",
+   "last_swept": "2026-07-10"
+  },
+  "260622-en": {
+   "title": "q3-estimated-taxes",
+   "kind": "project",
+   "path": "projects/q3-estimated-taxes/",
+   "owner": "",
+   "theme": "Finance",
+   "status": "steady",
+   "oneliner": "Q3 estimated payment due 9/15; amount penciled from Q2 actuals",
+   "next": "Re-check the number after the wedding-suite invoice clears",
+   "founded": "2026-06-22",
+   "first_swept": "2026-06-28",
+   "last_swept": "2026-07-10"
+  },
+  "260626-am": {
+   "title": "shop-insurance-renewal",
+   "kind": "project",
+   "path": "projects/shop-insurance-renewal/",
+   "owner": "alice",
+   "theme": "Finance",
+   "status": "waiting",
+   "oneliner": "Renewal quote up 18%; two alternate carriers quoted via bg-bufflehead",
+   "next": "Alice: pick a carrier before the 8/01 lapse date",
+   "founded": "2026-06-26",
+   "first_swept": "2026-06-28",
+   "last_swept": "2026-07-10"
+  },
+  "260423-zc": {
+   "title": "retirement-rebalance",
+   "kind": "project",
+   "path": "projects/retirement-rebalance/",
+   "owner": "alice",
+   "theme": "Finance",
+   "status": "paused-hold",
+   "oneliner": "Annual rebalance; target mix agreed in April",
+   "next": "Parked until the November window",
+   "founded": "2026-04-23",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260508-nk": {
+   "title": "subscriptions-audit",
+   "kind": "project",
+   "path": "projects/subscriptions-audit/",
+   "owner": "",
+   "theme": "Finance",
+   "status": "done",
+   "oneliner": "Cut four unused services; $63/mo back; calendar note set for next spring",
+   "next": "",
+   "founded": "2026-05-08",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260602-ii": {
+   "title": "desk-handbook",
+   "kind": "project",
+   "path": "projects/desk-handbook/",
+   "owner": "iris",
+   "theme": "Desk Ops",
+   "status": "active",
+   "oneliner": "How the desk runs: drain rhythm, sweep cadence, escalation rules",
+   "next": "Add the bulk-action verbs; Alice reads the draft",
+   "founded": "2026-06-02",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260606-ge": {
+   "title": "memory-garden",
+   "kind": "project",
+   "path": "agents/iris/memory/",
+   "owner": "iris",
+   "theme": "Desk Ops",
+   "status": "steady",
+   "oneliner": "Iris's long-term memory files; weekly prune keeps the index under 200 lines",
+   "next": "Promote the reunion contacts into the family file",
+   "founded": "2026-06-06",
+   "first_swept": "2026-06-09",
+   "last_swept": "2026-07-10"
+  },
+  "260620-eb": {
+   "title": "dana-onboarding",
+   "kind": "project",
+   "path": "agents/dana/",
+   "owner": "dana",
+   "theme": "Desk Ops",
+   "status": "active",
+   "oneliner": "Dana (second desk agent) learning the estate; shadowed two sweeps so far",
+   "next": "Dana runs the next sweep solo; Iris reviews the diff",
+   "founded": "2026-06-20",
+   "first_swept": "2026-06-21",
+   "last_swept": "2026-07-10"
+  },
+  "260602-ka": {
+   "title": "board-adoption",
+   "kind": "project",
+   "path": "projects/board-adoption/",
+   "owner": "iris",
+   "theme": "Desk Ops",
+   "status": "done",
+   "oneliner": "This board: registry seeded 6/02, first drain exercised 6/03",
+   "next": "",
+   "founded": "2026-06-02",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260611-hd": {
+   "title": "mail-triage-rules",
+   "kind": "project",
+   "path": "projects/mail-triage-rules/",
+   "owner": "iris",
+   "theme": "Desk Ops",
+   "status": "steady",
+   "oneliner": "Morning mail triage; anything outbound is flag-only, never auto-sent",
+   "next": "Add the guild list to the newsletters rule",
+   "founded": "2026-06-11",
+   "first_swept": "2026-06-15",
+   "last_swept": "2026-07-10"
+  },
+  "260517-uv": {
+   "title": "backup-verification",
+   "kind": "project",
+   "path": "projects/backup-verification/",
+   "owner": "dana",
+   "theme": "Desk Ops",
+   "status": "steady",
+   "oneliner": "Monthly restore test from the NAS; June test passed",
+   "next": "July test due; spot-check the slide-scan archive this time",
+   "founded": "2026-05-17",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260616-wy": {
+   "title": "zine-workshop",
+   "kind": "project",
+   "path": "projects/zine-workshop/",
+   "owner": "alice",
+   "theme": "Community",
+   "status": "active",
+   "oneliner": "Two-session zine workshop at the branch library; session 1 went well 7/08",
+   "next": "Session 2 handout to the librarian by 7/14 (she needs two days for copies)",
+   "founded": "2026-06-16",
+   "first_swept": "2026-06-21",
+   "last_swept": "2026-07-10"
+  },
+  "260424-qq": {
+   "title": "makers-guild",
+   "kind": "project",
+   "path": "projects/makers-guild/",
+   "owner": "",
+   "theme": "Community",
+   "status": "steady",
+   "oneliner": "Monthly guild meetings; sharing a fall-market table with the bindery",
+   "next": "July meeting is the 16th; bring the booth-split proposal",
+   "founded": "2026-04-24",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260505-yc": {
+   "title": "street-tree-inventory",
+   "kind": "project",
+   "path": "projects/street-tree-inventory/",
+   "owner": "",
+   "theme": "Community",
+   "status": "paused-hold",
+   "oneliner": "Neighborhood tree survey with the parks group; 3 of 9 blocks walked",
+   "next": "Resumes in the fall when the parks group reconvenes",
+   "founded": "2026-05-05",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260507-lr": {
+   "title": "reading-log",
+   "kind": "project",
+   "path": "projects/reading-log/",
+   "owner": "alice",
+   "theme": null,
+   "status": "steady",
+   "oneliner": "Commonplace reading log; 31 entries this year",
+   "next": "The heron monograph is half-read on the nightstand",
+   "founded": "2026-05-07",
+   "first_swept": "2026-06-02",
+   "last_swept": "2026-07-10"
+  },
+  "260612-tf": {
+   "title": "laptop-ewaste",
+   "kind": "project",
+   "path": "projects/laptop-ewaste/",
+   "owner": "",
+   "theme": null,
+   "status": "done",
+   "oneliner": "Old shop laptop wiped and dropped at the e-waste event 6/21",
+   "next": "",
+   "founded": "2026-06-12",
+   "first_swept": "2026-06-15",
+   "last_swept": "2026-07-10"
+  },
+  "260706-zr": {
+   "title": "bg-nightjar",
+   "kind": "bg",
+   "path": "agents/iris/bg/bg-nightjar/",
+   "owner": "iris",
+   "theme": "Family",
+   "status": "active",
+   "oneliner": "Slide carousel 5 scan batch + color-cast correction pass on the 1970s slides",
+   "next": "Finishes the batch, then hands off a proof sheet for Alice's pick of keepers",
+   "founded": "2026-07-06",
+   "first_swept": "2026-07-08",
+   "last_swept": "2026-07-10"
+  },
+  "260703-wd": {
+   "title": "bg-dunlin",
+   "kind": "bg",
+   "path": "agents/dana/bg/bg-dunlin/",
+   "owner": "dana",
+   "theme": "Print Shop",
+   "status": "waiting",
+   "oneliner": "Shop-site catalog build: 34 product pages generated from the inventory sheet",
+   "next": "Alice: bless the card layout (two options in the handoff), then it finishes the run",
+   "founded": "2026-07-03",
+   "first_swept": "2026-07-03",
+   "last_swept": "2026-07-10"
+  },
+  "260624-pn": {
+   "title": "bg-kittiwake",
+   "kind": "bg",
+   "path": "agents/iris/bg/bg-kittiwake/",
+   "owner": "iris",
+   "theme": "Field Guide",
+   "status": "done",
+   "oneliner": "Consistency sweep across the 14 species-account drafts; punch list of 22 fixes delivered",
+   "next": "Punch list integrated into the guide backlog — scratch dir ready to archive",
+   "founded": "2026-06-24",
+   "first_swept": "2026-06-28",
+   "last_swept": "2026-07-10"
+  },
+  "260627-vv": {
+   "title": "bg-sora",
+   "kind": "bg",
+   "path": "agents/iris/bg/bg-sora/",
+   "owner": "iris",
+   "theme": "Open Source",
+   "status": "paused-hold",
+   "oneliner": "perch export command; paused at the sightings-service API quota question",
+   "next": "Resume once Alice's API-tier request is answered",
+   "founded": "2026-06-27",
+   "first_swept": "2026-06-28",
+   "last_swept": "2026-07-10"
+  },
+  "260707-gt": {
+   "title": "bg-veery",
+   "kind": "bg",
+   "path": "agents/dana/bg/bg-veery/",
+   "owner": "dana",
+   "theme": "Family",
+   "status": "active",
+   "oneliner": "Reunion logistics: pavilion options costed, rain plan drafted, carpool matrix started",
+   "next": "Pavilion recommendation due in the next handoff; needs the 7/15 dietary list",
+   "founded": "2026-07-07",
+   "first_swept": "2026-07-08",
+   "last_swept": "2026-07-10"
+  },
+  "260630-jx": {
+   "title": "bg-whimbrel",
+   "kind": "bg",
+   "path": "agents/iris/bg/archive/bg-whimbrel/",
+   "owner": "iris",
+   "theme": "Finance",
+   "status": "archived",
+   "oneliner": "Q2 bookkeeping reconcile; integrated 7/06, scratch archived 7/08",
+   "next": "",
+   "founded": "2026-06-30",
+   "first_swept": "2026-07-03",
+   "last_swept": "2026-07-10"
+  },
+  "260608-ce": {
+   "title": "bg-godwit",
+   "kind": "bg",
+   "path": "agents/iris/bg/archive/bg-godwit/",
+   "owner": "iris",
+   "theme": "House",
+   "status": "archived",
+   "oneliner": "Gutter-quote comparison; done 6/15, fed the gutter-rehang decision",
+   "next": "",
+   "founded": "2026-06-08",
+   "first_swept": "2026-06-09",
+   "last_swept": "2026-07-10"
+  },
+  "260704-kh": {
+   "title": "bg-bufflehead",
+   "kind": "bg",
+   "path": "agents/dana/bg/bg-bufflehead/",
+   "owner": "dana",
+   "theme": "Finance",
+   "status": "waiting",
+   "oneliner": "Insurance-quote comparison matrix ready (three carriers, coverage deltas highlighted)",
+   "next": "Alice's carrier pick closes this out; scratch archives after",
+   "founded": "2026-07-04",
+   "first_swept": "2026-07-08",
+   "last_swept": "2026-07-10"
+  },
+  "260621-of": {
+   "title": "bg-phalarope",
+   "kind": "bg",
+   "path": "agents/iris/bg/bg-phalarope/",
+   "owner": "iris",
+   "theme": "Open Source",
+   "status": "done",
+   "oneliner": "perch #83 timezone fix + regression tests; merged 6/28",
+   "next": "Confirm exited, then archive the scratch dir",
+   "founded": "2026-06-21",
+   "first_swept": "2026-06-21",
+   "last_swept": "2026-07-10"
+  },
+  "260703-ez": {
+   "title": "Reply owed: Cedarline Press editor",
+   "kind": "thread",
+   "path": "",
+   "owner": "alice",
+   "theme": "Field Guide",
+   "status": "waiting",
+   "oneliner": "Editor (submissions@cedarline.example.com) asked 7/03 for two sample accounts",
+   "next": "Alice sends the corvid + swift accounts; swift needs the roost photos first",
+   "founded": "2026-07-03",
+   "first_swept": "2026-07-03",
+   "last_swept": "2026-07-10",
+   "pinned": true
+  },
+  "260708-bd": {
+   "title": "Expiring: cousin's reunion RSVP sheet",
+   "kind": "thread",
+   "path": "",
+   "owner": "iris",
+   "theme": "Family",
+   "status": "active",
+   "oneliner": "Shared sheet link (sheets.example.net) expires 7/24; RSVP tab is the only copy",
+   "next": "Iris copies the RSVP tab into projects/reunion-2026/ before expiry",
+   "founded": "2026-07-08",
+   "first_swept": "2026-07-08",
+   "last_swept": "2026-07-10"
+  },
+  "260705-nw": {
+   "title": "Payment-processor key rotation",
+   "kind": "thread",
+   "path": "",
+   "owner": "alice",
+   "theme": "Print Shop",
+   "status": "waiting",
+   "oneliner": "Checkout key predates the shop-laptop scare; rotate and re-test checkout",
+   "next": "Alice rotates in the processor dashboard; Iris re-tests checkout after",
+   "founded": "2026-07-05",
+   "first_swept": "2026-07-08",
+   "last_swept": "2026-07-10"
+  },
+  "260709-sf": {
+   "title": "Zine handout to library by 7/14",
+   "kind": "thread",
+   "path": "projects/zine-workshop/",
+   "owner": "alice",
+   "theme": "Community",
+   "status": "active",
+   "oneliner": "Session 2 handout; librarian needs it two days ahead for copies",
+   "next": "Finish the fold-diagram page; send PDF to the branch by 7/14",
+   "founded": "2026-07-09",
+   "first_swept": "2026-07-10",
+   "last_swept": "2026-07-10"
+  },
+  "260701-qd": {
+   "title": "Thank-you note: banding station lead",
+   "kind": "thread",
+   "path": "",
+   "owner": "alice",
+   "theme": "Birding",
+   "status": "done",
+   "oneliner": "Handwritten note for the Theo-week tour; sent 7/02",
+   "next": "",
+   "founded": "2026-07-01",
+   "first_swept": "2026-07-03",
+   "last_swept": "2026-07-10"
+  },
+  "260706-mh": {
+   "title": "Warranty claim: slide scanner",
+   "kind": "thread",
+   "path": "",
+   "owner": "iris",
+   "theme": "Family",
+   "status": "steady",
+   "oneliner": "Scanner double-feeds thin mounts; vendor ticket open, response promised in 5–7 days",
+   "next": "Iris watches the ticket; nudge 7/14 if silent",
+   "founded": "2026-07-06",
+   "first_swept": "2026-07-08",
+   "last_swept": "2026-07-10"
+  },
+  "260628-yy": {
+   "title": "Guild dues renewal",
+   "kind": "thread",
+   "path": "",
+   "owner": "alice",
+   "theme": "Community",
+   "status": "done",
+   "oneliner": "Annual dues paid 7/01; receipt filed with the shop books",
+   "next": "",
+   "founded": "2026-06-28",
+   "first_swept": "2026-06-28",
+   "last_swept": "2026-07-10"
+  }
+ }
+}</script>
+
+<script>
+const STATUS_ORDER = ["active","waiting","steady","paused-hold","done","archived"];
+const KIND_GLYPH = { project:"📁", bg:"🌀", thread:"🧵" };
+const API = location.protocol === "file:" ? "http://localhost:2675" : "";
+
+let board = JSON.parse(document.getElementById("board-data").textContent || "{}");
+let live = false;
+let queued = {};   // id -> [queued note/action texts]
+const selected = new Set();
+
+const $ = id => document.getElementById(id);
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+async function init() {
+  try {
+    const ping = await fetch(API + "/ping");
+    if (ping.ok) {
+      live = true;
+      board = await (await fetch(API + "/board.json")).json();
+      await refreshQueued();
+    }
+  } catch (e) { /* no server — read-only */ }
+  $("mode").textContent = live ? "live" : "read-only — start ./corkboard-serve to interact";
+  $("mode").className = "badge " + (live ? "b-live" : "b-ro");
+  $("action").disabled = !live;
+  $("process").disabled = !live;
+  render();
+}
+
+async function refreshQueued() {
+  queued = {};
+  try {
+    const events = await (await fetch(API + "/inbox.json")).json();
+    for (const e of events) {
+      if (e.type === "feedback") (queued[e.id] = queued[e.id] || []).push(e.text);
+      if (e.type === "action")   (queued[e.id] = queued[e.id] || []).push("⚡ " + e.action);
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function visibleItems() {
+  const f = $("filter").value.trim().toLowerCase();
+  const showDone = $("showdone").checked, showArch = $("showarch").checked;
+  return Object.entries(board.items || {}).filter(([id, it]) => {
+    if (it.status === "done" && !showDone) return false;
+    if (it.status === "archived" && !showArch) return false;
+    if (f) {
+      const hay = (id + " " + it.title + " " + (it.oneliner||"") + " " + (it.next||"")
+                   + " " + (it.owner||"") + " " + (it.theme||"")).toLowerCase();
+      if (!hay.includes(f)) return false;
+    }
+    return true;
+  });
+}
+
+function sortItems(entries) {
+  return entries.sort((a, b) => {
+    const s = STATUS_ORDER.indexOf(a[1].status) - STATUS_ORDER.indexOf(b[1].status);
+    return s !== 0 ? s : a[1].title.localeCompare(b[1].title);
+  });
+}
+
+function groupKeys(mode) {
+  if (mode === "theme")  return [...(board.themes || []), null];
+  if (mode === "status") return STATUS_ORDER;
+  const owners = new Set(Object.values(board.items||{}).map(i => i.owner || null));
+  return [...owners].sort((a,b) => String(a).localeCompare(String(b)));
+}
+
+function itemRow([id, it]) {
+  const tr = document.createElement("tr");
+  tr.className = "item";
+
+  const tdSel = document.createElement("td");
+  tdSel.className = "sel";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.checked = selected.has(id);
+  cb.disabled = !live;
+  cb.onchange = () => { cb.checked ? selected.add(id) : selected.delete(id); updateActionUI(); };
+  tdSel.appendChild(cb);
+
+  const tdId = document.createElement("td");
+  tdId.className = "id"; tdId.textContent = id; tdId.title = "click to copy";
+  tdId.onclick = () => { navigator.clipboard.writeText(id); toast("copied " + id); };
+
+  const tdName = document.createElement("td");
+  tdName.className = "name";
+  tdName.innerHTML = `<span class="kind">${KIND_GLYPH[it.kind]||""}</span>${esc(it.title)}`
+    + (it.path ? `<span class="path">${esc(it.path)}</span>` : "");
+
+  const tdOwner = document.createElement("td");
+  tdOwner.className = "who"; tdOwner.textContent = it.owner || "";
+
+  const tdStatus = document.createElement("td");
+  tdStatus.innerHTML = `<span class="pill s-${it.status}">${it.status}</span>`;
+
+  const tdTheme = document.createElement("td");
+  const sel = document.createElement("select");
+  for (const t of [...(board.themes||[]), null]) {
+    const o = document.createElement("option");
+    o.value = t || ""; o.textContent = t || "— unthemed —";
+    if ((it.theme||null) === t) o.selected = true;
+    sel.appendChild(o);
+  }
+  sel.disabled = !live;
+  sel.onchange = async () => {
+    const theme = sel.value || null;
+    const r = await post("/theme", { id, theme });
+    if (r) { it.theme = theme; toast(`${id} → ${theme || "unthemed"}`); render(); }
+  };
+  tdTheme.appendChild(sel);
+
+  const tdNext = document.createElement("td");
+  tdNext.className = "next";
+  tdNext.innerHTML = (it.oneliner ? `<span class="one">${esc(it.oneliner)}</span>` : "")
+    + esc(it.next || "")
+    + (it.flags || []).map(f => `<span class="flag">⚠️ ${esc(f)}</span>`).join("")
+    + (queued[id] || []).map(q => `<span class="queued"><b>queued:</b> ${esc(q)}</span>`).join("");
+
+  const tdFb = document.createElement("td");
+  const btn = document.createElement("button");
+  btn.className = "fb-btn"; btn.textContent = "💬"; btn.title = live ? "leave a note" : "read-only";
+  btn.disabled = !live;
+  btn.onclick = () => toggleFbRow(tr, id);
+  tdFb.appendChild(btn);
+  const pinBtn = document.createElement("button");
+  pinBtn.className = "pin-btn" + (it.pinned ? " pinned" : "");
+  pinBtn.textContent = "📍";
+  pinBtn.title = it.pinned ? "unpin" : "pin to the top strip";
+  pinBtn.disabled = !live;
+  pinBtn.onclick = async () => {
+    const r = await post("/pin", { id, pinned: !it.pinned });
+    if (r) { it.pinned = !it.pinned; toast(it.pinned ? `pinned ${id}` : `unpinned ${id}`); render(); }
+  };
+  tdFb.appendChild(pinBtn);
+
+  for (const td of [tdSel, tdId, tdName, tdOwner, tdStatus, tdTheme, tdNext, tdFb]) tr.appendChild(td);
+  return tr;
+}
+
+function updateActionUI() {
+  const n = selected.size;
+  $("selcount").textContent = n ? `${n} selected` : "";
+  $("apply").disabled = !(live && n && $("action").value);
+}
+
+function toggleFbRow(tr, id) {
+  const next = tr.nextElementSibling;
+  if (next && next.classList.contains("fbrow")) { next.remove(); return; }
+  const row = document.createElement("tr");
+  row.className = "fbrow";
+  const td = document.createElement("td");
+  td.colSpan = 8;
+  const input = document.createElement("input");
+  input.type = "text"; input.placeholder = `note for ${id} — Enter to queue, Esc to cancel`;
+  input.onkeydown = async (e) => {
+    if (e.key === "Escape") row.remove();
+    if (e.key === "Enter" && input.value.trim()) {
+      const text = input.value.trim();
+      const r = await post("/feedback", { id, text });
+      if (r) {
+        (queued[id] = queued[id] || []).push(text);
+        row.remove(); toast("queued for the desk"); render();
+      }
+    }
+  };
+  td.appendChild(input);
+  row.appendChild(td);
+  tr.after(row);
+  input.focus();
+}
+
+async function post(path, body) {
+  try {
+    const r = await fetch(API + path, { method:"POST",
+      headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) { toast("error: " + (await r.json()).error); return false; }
+    return true;
+  } catch (e) { toast("server gone?"); return false; }
+}
+
+function table(entries, sorter) {
+  const t = document.createElement("table");
+  const hdr = document.createElement("tr");
+  const thSel = document.createElement("th");
+  thSel.className = "sel";
+  const all = document.createElement("input");
+  all.type = "checkbox";
+  all.disabled = !live;
+  all.title = "select all in this group";
+  all.checked = entries.length > 0 && entries.every(([id]) => selected.has(id));
+  all.onchange = () => {
+    for (const [id] of entries) all.checked ? selected.add(id) : selected.delete(id);
+    render(); updateActionUI();
+  };
+  thSel.appendChild(all);
+  hdr.appendChild(thSel);
+  hdr.insertAdjacentHTML("beforeend",
+    `<th>id</th><th>item</th><th>owner</th><th>status</th><th>theme</th><th>now / next</th><th></th>`);
+  t.appendChild(hdr);
+  for (const e of (sorter || sortItems)(entries)) t.appendChild(itemRow(e));
+  return t;
+}
+
+async function applyAction() {
+  const action = $("action").value;
+  if (!action || !selected.size) return;
+  let n = 0;
+  for (const id of [...selected]) {
+    const r = await post("/action", { id, action });
+    if (r) { (queued[id] = queued[id] || []).push("⚡ " + action); n++; }
+  }
+  selected.clear();
+  $("action").value = "";
+  updateActionUI();
+  render();
+  toast(`queued "${action}" for ${n} item${n === 1 ? "" : "s"} — the desk will act`);
+}
+
+function renderPins() {
+  const div = $("pins");
+  div.innerHTML = "";
+  const pinned = Object.entries(board.items || {}).filter(([,it]) => it.pinned && it.status !== "archived");
+  for (const [id, it] of pinned.sort((a, b) => a[0].localeCompare(b[0]))) {
+    const chip = document.createElement("span");
+    chip.className = "pinchip";
+    chip.title = "click to copy id";
+    chip.innerHTML = `📌 <span class="pid">${esc(id)}</span> <b>${esc(it.title)}</b>`
+      + (it.next ? ` <span class="pnext">— ${esc(it.next)}</span>` : "");
+    chip.onclick = () => { navigator.clipboard.writeText(id); toast("copied " + id); };
+    div.appendChild(chip);
+  }
+}
+
+function render() {
+  renderPins();
+  const items = visibleItems();
+  const mode = $("groupby").value;
+  const attnDiv = $("attn");
+  const div = $("groups");
+
+  // id mode: one flat ledger, everything sorted by id — no separate attention queue
+  if (mode === "id-asc" || mode === "id-desc") {
+    const desc = mode === "id-desc";
+    attnDiv.innerHTML = "";
+    div.innerHTML = "";
+    const h = document.createElement("h2");
+    h.innerHTML = `All items by id ${desc ? "↓ (newest first)" : "↑ (oldest first)"} <span class="count">(${items.length})</span>`;
+    div.appendChild(h);
+    div.appendChild(table(items, es => es.sort((a, b) =>
+      desc ? b[0].localeCompare(a[0]) : a[0].localeCompare(b[0]))));
+    $("swept").textContent =
+      `${Object.keys(board.items||{}).length} items · swept ${board.swept || "?"} — staleness is expected and displayed, never hidden`;
+    return;
+  }
+
+  // attention queue — waiting, always on top
+  const attn = items.filter(([,it]) => it.status === "waiting");
+  attnDiv.innerHTML = "";
+  if (attn.length) {
+    const h = document.createElement("h2");
+    h.innerHTML = `⚡ Attention queue — waiting on you <span class="count">(${attn.length})</span>`;
+    attnDiv.appendChild(h);
+    attnDiv.appendChild(table(attn));
+  }
+
+  // grouped sections
+  const rest = items.filter(([,it]) => it.status !== "waiting");
+  div.innerHTML = "";
+  for (const key of groupKeys(mode)) {
+    const grp = rest.filter(([,it]) =>
+      mode === "theme"  ? (it.theme||null) === key :
+      mode === "status" ? it.status === key :
+                          (it.owner||null) === (key||null));
+    if (!grp.length) continue;
+    const h = document.createElement("h2");
+    const label = key === null || key === "" ? (mode === "theme" ? "Unthemed" : "(no owner)") : key;
+    h.innerHTML = `${esc(String(label))} <span class="count">(${grp.length})</span>`;
+    div.appendChild(h);
+    div.appendChild(table(grp));
+  }
+
+  $("swept").textContent =
+    `${Object.keys(board.items||{}).length} items · swept ${board.swept || "?"} — staleness is expected and displayed, never hidden`;
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+
+for (const id of ["groupby","showdone","showarch"]) $(id).onchange = render;
+$("filter").oninput = render;
+$("action").onchange = updateActionUI;
+$("apply").onclick = applyAction;
+$("process").onclick = async () => {
+  try {
+    const r = await fetch(API + "/process", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: "{}" });
+    if (r.ok) toast("flagged — your desk agent drains at session start and at natural breaks");
+    else toast("error flagging");
+  } catch (e) { toast("server gone?"); }
+};
+init();
+</script>
+</body>
+</html>

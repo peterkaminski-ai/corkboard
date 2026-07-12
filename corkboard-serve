@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""corkboard-serve — tiny localhost server for the corkboard.
+
+Usage:
+  ./corkboard-serve            serve on http://localhost:2675 (2675 = CORK)
+  ./corkboard-serve --port N   serve on another port
+  ./corkboard-serve render     regenerate the static data blob inside board.html
+                               (run after a sweep so the file-opened board is fresh)
+
+Serves the board UI, GET /board.json, GET /inbox.json, POST /feedback,
+POST /theme, POST /action, POST /pin, POST /process.
+Writes only inside this directory. No auth — localhost only, by design.
+See PATTERN.md.
+"""
+import json, re, sys, datetime
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+BOARD = ROOT / "board.json"
+HTML = ROOT / "board.html"
+INBOX = ROOT / "inbox.jsonl"
+
+DATA_RE = re.compile(
+    r'(<script id="board-data" type="application/json">).*?(</script>)', re.S)
+
+
+def now_iso():
+    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def render_html(html_text, board_text):
+    return DATA_RE.sub(lambda m: m.group(1) + board_text.strip() + m.group(2),
+                       html_text, count=1)
+
+
+def render_static():
+    html = render_html(HTML.read_text(), BOARD.read_text())
+    HTML.write_text(html)
+    print(f"rendered {HTML} from {BOARD}")
+
+
+def pending_events():
+    events = []
+    if INBOX.exists():
+        for line in INBOX.read_text().splitlines():
+            line = line.strip()
+            if line:
+                events.append(json.loads(line))
+    return events
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "corkboard-serve/0.1"
+
+    def _send(self, code, body, ctype="application/json"):
+        data = body if isinstance(body, bytes) else body.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", ctype + "; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        # allow a file://-opened board.html to talk to the server
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_OPTIONS(self):
+        self._send(204, b"")
+
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        if path in ("/", "/board.html"):
+            html = render_html(HTML.read_text(), BOARD.read_text())
+            self._send(200, html, "text/html")
+        elif path == "/board.json":
+            self._send(200, BOARD.read_text())
+        elif path == "/inbox.json":
+            self._send(200, json.dumps(pending_events()))
+        elif path == "/ping":
+            self._send(200, '{"ok": true}')
+        else:
+            self._send(404, '{"error": "not found"}')
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            req = json.loads(self.rfile.read(length) or b"{}")
+        except json.JSONDecodeError:
+            return self._send(400, '{"error": "bad json"}')
+
+        if self.path == "/process":
+            event = {"ts": now_iso(), "type": "process"}
+            with INBOX.open("a") as f:
+                f.write(json.dumps(event, ensure_ascii=False) + "\n")
+            return self._send(200, '{"ok": true}')
+
+        board = json.loads(BOARD.read_text())
+        item_id = req.get("id")
+        if item_id not in board["items"]:
+            return self._send(400, '{"error": "unknown item id"}')
+
+        if self.path == "/pin":
+            pinned = bool(req.get("pinned"))
+            if pinned:
+                board["items"][item_id]["pinned"] = True
+            else:
+                board["items"][item_id].pop("pinned", None)
+            BOARD.write_text(json.dumps(board, indent=1, ensure_ascii=False)
+                             + "\n")
+            event = {"ts": now_iso(), "id": item_id, "type": "pin",
+                     "pinned": pinned}
+            with INBOX.open("a") as f:
+                f.write(json.dumps(event, ensure_ascii=False) + "\n")
+            self._send(200, '{"ok": true}')
+
+        elif self.path == "/action":
+            action = (req.get("action") or "").strip()
+            if not action:
+                return self._send(400, '{"error": "empty action"}')
+            event = {"ts": now_iso(), "id": item_id, "type": "action",
+                     "action": action}
+            with INBOX.open("a") as f:
+                f.write(json.dumps(event, ensure_ascii=False) + "\n")
+            self._send(200, '{"ok": true}')
+
+        elif self.path == "/feedback":
+            text = (req.get("text") or "").strip()
+            if not text:
+                return self._send(400, '{"error": "empty feedback"}')
+            event = {"ts": now_iso(), "id": item_id, "type": "feedback",
+                     "text": text}
+            with INBOX.open("a") as f:
+                f.write(json.dumps(event, ensure_ascii=False) + "\n")
+            self._send(200, '{"ok": true}')
+
+        elif self.path == "/theme":
+            theme = req.get("theme") or None
+            if theme is not None and theme not in board["themes"]:
+                return self._send(400, '{"error": "unknown theme"}')
+            board["items"][item_id]["theme"] = theme
+            BOARD.write_text(json.dumps(board, indent=1, ensure_ascii=False)
+                             + "\n")
+            event = {"ts": now_iso(), "id": item_id, "type": "theme",
+                     "theme": theme}
+            with INBOX.open("a") as f:
+                f.write(json.dumps(event, ensure_ascii=False) + "\n")
+            self._send(200, '{"ok": true}')
+
+        else:
+            self._send(404, '{"error": "not found"}')
+
+    def log_message(self, fmt, *args):
+        sys.stderr.write("%s %s\n" % (self.log_date_time_string(),
+                                      fmt % args))
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] == "render":
+        render_static()
+        return
+    port = 2675
+    if "--port" in args:
+        port = int(args[args.index("--port") + 1])
+    server = HTTPServer(("127.0.0.1", port), Handler)
+    print(f"corkboard: http://localhost:{port}/  (data: {ROOT})")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()
